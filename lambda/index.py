@@ -1,10 +1,10 @@
 # lambda/index.py
 import json
+import urllib.request
 import os
 import boto3
 import re  # 正規表現モジュールをインポート
 from botocore.exceptions import ClientError
-
 
 # Lambda コンテキストからリージョンを抽出する関数
 def extract_region_from_arn(arn):
@@ -18,7 +18,10 @@ def extract_region_from_arn(arn):
 bedrock_client = None
 
 # モデルID
-MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
+# MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
+
+# FastAPIエンドポイント
+FASTAPI_ENDPOINT = os.environ.get("FASTAPI_ENDPOINT", "https://5f59-34-125-80-154.ngrok-free.app")
 
 def lambda_handler(event, context):
     try:
@@ -43,7 +46,7 @@ def lambda_handler(event, context):
         conversation_history = body.get('conversationHistory', [])
         
         print("Processing message:", message)
-        print("Using model:", MODEL_ID)
+        # print("Using model:", MODEL_ID)
         
         # 会話履歴を使用
         messages = conversation_history.copy()
@@ -54,6 +57,27 @@ def lambda_handler(event, context):
             "content": message
         })
         
+        # FastAPI に POST リクエストを送信
+        payload = json.dumps({
+            "message": message,
+            "conversationHistory": conversation_history
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            FASTAPI_ENDPOINT,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req) as res:
+            fastapi_response = json.loads(res.read().decode("utf-8"))
+
+        # FastAPI のレスポンスから応答と会話履歴を取り出す
+        assistant_response = fastapi_response["response"]
+        messages = fastapi_response["conversationHistory"]
+
+        '''
         # Nova Liteモデル用のリクエストペイロードを構築
         # 会話履歴を含める
         bedrock_messages = []
@@ -82,6 +106,7 @@ def lambda_handler(event, context):
         
         print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
         
+
         # invoke_model APIを呼び出し
         response = bedrock_client.invoke_model(
             modelId=MODEL_ID,
@@ -105,6 +130,7 @@ def lambda_handler(event, context):
             "role": "assistant",
             "content": assistant_response
         })
+        '''
         
         # 成功レスポンスの返却
         return {
